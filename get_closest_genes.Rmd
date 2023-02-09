@@ -1,0 +1,116 @@
+---
+title: "Analysis of ChIP-nexus peaks for CSL proteins and Mga2 - finding their closest genes"
+author: "Martin Převorovský, prevorov@natur.cuni.cz, http://www.GenoMik.cz"
+output: html_document
+---
+
+```{r setup, eval=TRUE}
+library(GenomicRanges)
+library(rtracklayer)
+
+peaks_filtered_dir <- './peaks_filtered/'
+```
+
+
+* extract all 'gene' features from the genome annotation
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+input_gff_ext=".gff3"
+genes_gff_ext=".genes_all.gff3"
+coding_genes_gff_ext=".genes_coding.gff3"
+
+grep -w gene "${annotation}" | bedtools sort -i - > "${annotation/$input_gff_ext/$genes_gff_ext}"
+grep -w gene "${annotation}" | grep -v SP.*RNA | bedtools sort -i - > "${annotation/$input_gff_ext/$coding_genes_gff_ext}"
+
+
+peaks_filtered_dir="./peaks_filtered/"
+input_bed_ext=".bed"
+
+closest_ext=".CLOSEST"
+closest_coding_ext=".CLOSEST_CODING"
+
+#closest_up_ext=".CLOSEST_UP"
+#closest_coding_up_ext=".CLOSEST_CODING_UP"
+
+peak_files=("${peaks_filtered_dir}Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed" "${peaks_filtered_dir}Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed")
+#mapfile -t peak_files < <(ls -1 "${peaks_filtered_dir}" | grep "Fkh2-filtered\.summits\.bed$")
+for i in ${peak_files[@]};
+do
+  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b -iu > "${i/$input_bed_ext/$closest_bed_up_ext}"
+    #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b > "${i/$input_bed_ext/$closest_ext}"
+    bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${i/$input_bed_ext/$closest_ext}"
+
+    
+  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b -iu > "${i/$input_bed_ext/$closest_coding_up_bed_ext}"
+  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b > "${i/$input_bed_ext/$closest_coding_ext}"
+  bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${i/$input_bed_ext/$closest_coding_ext}"
+done
+```
+
+
+
+diagnostic plots
+
+Cbf11
+
+```{r, eval=FALSE}
+cbf11_peaks <- read.delim(paste0(peaks_filtered_dir, "Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed"),
+                          stringsAsFactors = FALSE, header = FALSE)
+cbf11_closest_genes <- read.delim(paste0(peaks_filtered_dir,
+                                         "Cbf11.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING"),
+                                  stringsAsFactors = FALSE, header = FALSE)
+
+cbf11_closest_genes2 <- read.delim(paste0(peaks_filtered_dir,
+                                         "Cbf11.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING2"),
+                                  stringsAsFactors = FALSE, header = TRUE)
+
+
+cbf11_peaks <- cbind(cbf11_peaks, cbf11_closest_genes)
+for (i in 1:nrow(cbf11_peaks)){
+  cbf11_peaks[i, 'name'] <- cbf11_closest_genes2[cbf11_closest_genes2$Systematic.ID == cbf11_peaks[i, 7], 'Gene.name']
+}
+
+cbf11_peaks <- cbf11_peaks[order(cbf11_peaks[, 5]), ]
+
+plot(cbf11_peaks[, 5], pch = 20, ylab = "peak score", xlab = 'Cbf11 peaks')
+text(x = 1:nrow(cbf11_peaks) - 1,
+     y = cbf11_peaks[, 5] + 1,
+     labels = cbf11_peaks$name,
+     cex = 0.4, srt = 90, xpd = TRUE, adj = 0)
+```
+
+Cbf12
+
+```{r, eval=FALSE}
+cbf12_peaks <- read.delim(paste0(peaks_filtered_dir, "Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed"),
+                          stringsAsFactors = FALSE, header = FALSE)
+cbf12_closest_genes <- read.delim(paste0(peaks_filtered_dir,
+                                         "Cbf12.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING"),
+                                  stringsAsFactors = FALSE, header = FALSE)
+
+cbf12_closest_genes2 <- read.delim(paste0(peaks_filtered_dir,
+                                         "Cbf12.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING2"),
+                                  stringsAsFactors = FALSE, header = TRUE)
+
+
+cbf12_peaks <- cbind(cbf12_peaks, cbf12_closest_genes)
+for (i in 1:nrow(cbf12_peaks)){
+  cbf12_peaks[i, 'name'] <- cbf12_closest_genes2[cbf12_closest_genes2$Systematic.ID == cbf12_peaks[i, 7], 'Gene.name']
+}
+
+cbf12_peaks <- cbf12_peaks[order(cbf12_peaks[, 5]), ]
+
+plot(cbf12_peaks[, 5], pch = 20, ylab = "peak score", xlab = 'Cbf12 peaks')
+text(x = 1:nrow(cbf12_peaks) - 1,
+     y = cbf12_peaks[, 5] + 1,
+     labels = cbf12_peaks$name,
+     cex = 0.3, srt = 90, xpd = TRUE, adj = 0)
+```
+
+```{bash, eval=FALSE}
+paste -d "\t" ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING | sort -n -k 5 -r - > ./peaks_filtered/Cbf11.bed
+
+paste -d "\t" ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING | sort -n -k 5 -r -  > ./peaks_filtered/Cbf12.bed
+```

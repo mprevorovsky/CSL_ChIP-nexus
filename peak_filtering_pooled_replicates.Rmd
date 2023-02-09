@@ -1,0 +1,209 @@
+---
+title: "Filtering of ChIP-nexus peaks for CSL proteins and Mga2 - using peaks called from pooled replicate data"
+author: "Martin Převorovský, prevorov@natur.cuni.cz, http://www.GenoMik.cz"
+output: html_document
+---
+
+```{r setup, eval=TRUE}
+library(GenomicRanges)
+library(rtracklayer)
+
+summit_dir <- './peaks_pooled/'
+summit_file_extension <- '.bed$'
+peaks_filtered_dir <- './peaks_filtered_pooled/'
+
+peak_window <- 50
+controls <- c('EXP_Fkh2', 'STAT_Fkh2', 'EXP_untagged', 'STAT_untagged')
+
+dir.create(peaks_filtered_dir, showWarnings = FALSE)
+```
+
+
+* remove peaks in *S. cerevisiae* chromosomes
+
+```{bash, eval=TRUE}
+sed -i "/tpg\|ref/d" ./peaks_pooled/*.bed
+```
+
+
+* load BED files with summit info
+
+* extend summits into peaks (using an arbitrary peak window size)
+
+* extract sample info, and list of experimental conditions
+
+```{r, eval=TRUE}
+summit_files <- list.files(summit_dir, pattern = summit_file_extension, full.names = TRUE)
+samples <- gsub("\\..*", '', basename(summit_files))
+samples <- gsub("_summits", '', samples)
+conditions <- unique(gsub('^.*?_', '', samples))
+
+peaks <- NULL
+for (i in 1:length(summit_files)) {
+  current_file <- import.bed(summit_files[i])
+  
+  current_file$file_name <- summit_files[i]
+  current_file$sample <- samples[i]
+  current_file$summit <- start(current_file)
+  start(current_file) <- start(current_file) - peak_window + 1
+  end(current_file) <- end(current_file) + peak_window
+  
+  peaks <- c(peaks, current_file)
+}
+
+rm(current_file)
+```
+
+* filter out peaks present in untagged controls
+
+```{r, eval=TRUE}
+control_indices <- which(samples %in% controls)
+conditions_exp_indices <- grep('Cbf12', samples, invert = TRUE)
+conditions_exp_indices <- conditions_exp_indices[!conditions_exp_indices %in% control_indices]
+conditions_stat_indices <- grep('Cbf12', samples)
+
+untagged_exp_index <- grep('EXP_untagged', samples)
+untagged_stat_index <-grep('STAT_untagged', samples) 
+  
+peaks_kept <- peaks
+peaks_dropped <- peaks
+
+for (i in conditions_exp_indices){
+  peaks_kept[[i]] <- subsetByOverlaps(peaks[[i]], peaks[[untagged_exp_index]], invert = TRUE)
+  peaks_dropped[[i]] <- subsetByOverlaps(peaks[[i]], peaks[[untagged_exp_index]])
+}
+
+for (i in conditions_stat_indices){
+  peaks_kept[[i]] <- subsetByOverlaps(peaks[[i]], peaks[[untagged_stat_index]], invert = TRUE)
+  peaks_dropped[[i]] <- subsetByOverlaps(peaks[[i]], peaks[[untagged_stat_index]])
+}
+```
+
+* save filtered peaks as BED files (kept and dropped as separate files)
+
+```{r, eval=TRUE}
+sample_indices_to_process <- c(conditions_exp_indices, conditions_stat_indices)
+for (i in sample_indices_to_process) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           samples[i], 
+                           '.untagged-filtered.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             samples[i], 
+                             '.untagged-filtered.summits.bed')
+  
+  tmp_bed <- peaks_kept[[i]]
+  
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit
+  end(tmp_bed) <- tmp_bed$summit # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+for (i in sample_indices_to_process) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           samples[i], 
+                           '.untagged-filtered_dropped.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             samples[i], 
+                             '.untagged-filtered_dropped.summits.bed')
+  
+  tmp_bed <- peaks_dropped[[i]]
+  
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit
+  end(tmp_bed) <- tmp_bed$summit # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+rm(filename_peaks, filename_summits, tmp_bed)
+```
+
+* filter out peaks present in Fkh2-TAP (irrelevant IP) controls
+
+```{r, eval=TRUE}
+fkh2_exp_index <- grep('EXP_Fkh2', samples)
+fkh2_stat_index <-grep('STAT_Fkh2', samples) 
+  
+peaks_kept_kept <- peaks_kept
+peaks_kept_dropped <- peaks_kept
+
+for (i in conditions_exp_indices){
+  peaks_kept_kept[[i]] <- subsetByOverlaps(peaks_kept[[i]], 
+                                           peaks[[fkh2_exp_index]], invert = TRUE)
+  peaks_kept_dropped[[i]] <- subsetByOverlaps(peaks_kept[[i]], 
+                                              peaks[[fkh2_exp_index]])
+}
+
+for (i in conditions_stat_indices){
+  peaks_kept_kept[[i]] <- subsetByOverlaps(peaks_kept[[i]], 
+                                           peaks[[fkh2_stat_index]], invert = TRUE)
+  peaks_kept_dropped[[i]] <- subsetByOverlaps(peaks_kept[[i]], 
+                                              peaks[[fkh2_stat_index]])
+}
+```
+
+* save filtered peaks as BED files (kept and dropped as separate files)
+
+```{r, eval=TRUE}
+for (i in sample_indices_to_process) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           samples[i], 
+                           '.untagged+Fkh2-filtered.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             samples[i], 
+                             '.untagged+Fkh2-filtered.summits.bed')
+  
+  tmp_bed <- peaks_kept_kept[[i]]
+  
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit
+  end(tmp_bed) <- tmp_bed$summit # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+for (i in sample_indices_to_process) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           samples[i], 
+                           '.untagged+Fkh2-filtered_dropped.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             samples[i], 
+                             '.untagged+Fkh2-filtered_dropped.summits.bed')
+  
+  tmp_bed <- peaks_kept_dropped[[i]]
+  
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit
+  end(tmp_bed) <- tmp_bed$summit # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+rm(filename_peaks, filename_summits, tmp_bed)
+```
+
+
+
+
+```{bash, eval=TRUE}
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf11*.bw -R ./peaks_filtered_pooled/Cbf11.untagged*summits.bed -a 300 -b 300 -o matrix11_pooled
+plotHeatmap -m matrix11_pooled -o test11_pooled.svg --sortUsing max --sortUsingSamples 6
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf12*.bw -R ./peaks_filtered_pooled/Cbf12.untagged*summits.bed -a 300 -b 300 -o matrix12_pooled
+plotHeatmap -m matrix12_pooled -o test12_pooled.svg --sortUsing max --sortUsingSamples 4
+```
+
+```{bash, eval=TRUE}
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf11*plus*.bw ./coverage_ChIP-nexus/Mga2*plus*.bw -R ./peaks_filtered_pooled/Cbf11.untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o matrix_fin11_pooled
+plotHeatmap -m matrix_fin11_pooled -o test_fin11_pooled.svg --sortUsing sum --sortUsingSamples 3 --missingDataColor red --colorMap Greys
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf12*plus*.bw -R ./peaks_filtered_pooled/Cbf12.untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o matrix_fin12_pooled
+plotHeatmap -m matrix_fin12_pooled -o test_fin12_pooled.svg --sortUsing sum --sortUsingSamples 2 --missingDataColor red --colorMap Greys 
+```
+
+
+```{r}
+sessionInfo()
+```

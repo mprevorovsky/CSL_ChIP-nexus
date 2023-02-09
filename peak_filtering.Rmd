@@ -1,0 +1,270 @@
+---
+title: "Filtering of ChIP-nexus peaks for CSL proteins and Mga2"
+author: "Martin Převorovský, prevorov@natur.cuni.cz, http://www.GenoMik.cz"
+output: html_document
+---
+
+```{r setup, eval=TRUE}
+library(GenomicRanges)
+library(rtracklayer)
+
+summit_dir <- './peak_summits/'
+summit_file_extension <- '.bed$'
+peaks_filtered_dir <- './peaks_filtered/'
+
+peak_window <- 50
+controls <- c('EXP_Fkh2', 'STAT_Fkh2', 'EXP_untagged', 'STAT_untagged')
+
+dir.create(peaks_filtered_dir, showWarnings = FALSE)
+```
+
+
+* remove peaks in *S. cerevisiae* chromosomes
+
+```{bash, eval=TRUE}
+sed -i "/tpg\|ref/d" ./peak_summits/*.bed
+```
+
+
+* load BED files with summit info
+
+* extend summits into peaks (using an arbitrary peak window size)
+
+* extract sample info, list of experimental conditions, and reconstruct replicate relationships
+
+```{r, eval=TRUE}
+summit_files <- list.files(summit_dir, pattern = summit_file_extension, full.names = TRUE)
+samples <- gsub("\\..*", '', basename(summit_files))
+conditions <- unique(gsub('^.*?_', '', samples))
+
+peaks <- NULL
+for (i in 1:length(summit_files)) {
+  current_file <- import.bed(summit_files[i])
+  
+  current_file$file_name <- summit_files[i]
+  current_file$sample <- samples[i]
+  current_file$summit <- start(current_file)
+  start(current_file) <- start(current_file) - peak_window + 1
+  end(current_file) <- end(current_file) + peak_window
+  
+  peaks <- c(peaks, current_file)
+}
+
+rm(current_file)
+```
+
+* only keep peaks that are present in all three replicates
+
+```{r, eval=TRUE}
+conditions_w_replicates <- conditions[!conditions %in% controls]
+
+peaks_reproducible <- NULL
+for (i in 1:length(conditions_w_replicates)){
+  triplicates <- peaks[grep(paste0('B[0-9][0-9]_', conditions_w_replicates[i], '$'), samples)]
+  
+  overlap1 <- mergeByOverlaps(triplicates[[1]], triplicates[[2]])
+  overlap1[[1]]$summit_2 <- overlap1[, 12]
+  overlap1[[1]]$score_2 <- overlap1[, 9]
+  
+  overlap2 <- mergeByOverlaps(overlap1[[1]], triplicates[[3]])
+  overlap2[[1]]$summit_3 <- overlap2[, 14]
+  overlap2[[1]]$score_3 <- overlap2[, 11]
+  
+  overlap2[[1]]$summit_avg <- round(rowMeans(as.matrix(mcols(overlap2[[1]])[, c('summit', 'summit_2', 'summit_3')])))
+  overlap2[[1]]$score_min <- apply(as.matrix(mcols(overlap2[[1]])[, c('score', 'score_2', 'score_3')]), 1, min)
+  start(overlap2[[1]]) <- overlap2[[1]]$summit_avg - peak_window + 1
+  end(overlap2[[1]]) <- overlap2[[1]]$summit_avg + peak_window
+                                 
+  peaks_reproducible <- c(peaks_reproducible, overlap2[[1]])
+  rm(overlap1, overlap2, triplicates)
+}
+```
+
+* save reproducible peaks as BED files
+
+```{r, eval=TRUE}
+for (i in 1:length(peaks_reproducible)) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           conditions_w_replicates[i], 
+                           '.reproducible.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             conditions_w_replicates[i], 
+                             '.reproducible.summits.bed')
+  
+  tmp_bed <- peaks_reproducible[[i]]
+  
+  tmp_bed$score <- tmp_bed$score_min
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit_avg
+  end(tmp_bed) <- tmp_bed$summit_avg # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+rm(filename_peaks, filename_summits, tmp_bed)
+```
+
+* filter out peaks present in untagged controls
+
+```{r, eval=TRUE}
+conditions_exp_indices <- grep('Cbf12', conditions_w_replicates, invert = TRUE)
+conditions_stat_indices <- grep('Cbf12', conditions_w_replicates)
+
+untagged_exp_index <- grep('EXP_untagged', samples)
+untagged_stat_index <-grep('STAT_untagged', samples) 
+  
+peaks_reproducible_kept <- peaks_reproducible
+peaks_reproducible_dropped <- peaks_reproducible
+
+for (i in conditions_exp_indices){
+  peaks_reproducible_kept[[i]] <- subsetByOverlaps(peaks_reproducible[[i]], peaks[[untagged_exp_index]], invert = TRUE)
+  peaks_reproducible_dropped[[i]] <- subsetByOverlaps(peaks_reproducible[[i]], peaks[[untagged_exp_index]])
+}
+
+for (i in conditions_stat_indices){
+  peaks_reproducible_kept[[i]] <- subsetByOverlaps(peaks_reproducible[[i]], peaks[[untagged_stat_index]], invert = TRUE)
+  peaks_reproducible_dropped[[i]] <- subsetByOverlaps(peaks_reproducible[[i]], peaks[[untagged_stat_index]])
+}
+```
+
+* save filtered peaks as BED files (kept and dropped as separate files)
+
+```{r, eval=TRUE}
+for (i in 1:length(peaks_reproducible_kept)) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           conditions_w_replicates[i], 
+                           '.reproducible_untagged-filtered.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             conditions_w_replicates[i], 
+                             '.reproducible_untagged-filtered.summits.bed')
+  
+  tmp_bed <- peaks_reproducible_kept[[i]]
+  
+  tmp_bed$score <- tmp_bed$score_min
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit_avg
+  end(tmp_bed) <- tmp_bed$summit_avg # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+for (i in 1:length(peaks_reproducible_dropped)) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           conditions_w_replicates[i], 
+                           '.reproducible_untagged-filtered_dropped.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             conditions_w_replicates[i], 
+                             '.reproducible_untagged-filtered_dropped.summits.bed')
+  
+  tmp_bed <- peaks_reproducible_dropped[[i]]
+  
+  tmp_bed$score <- tmp_bed$score_min
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit_avg
+  end(tmp_bed) <- tmp_bed$summit_avg # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+rm(filename_peaks, filename_summits, tmp_bed)
+```
+
+* filter out peaks present in Fkh2-TAP (irrelevant IP) controls
+
+```{r, eval=TRUE}
+fkh2_exp_index <- grep('EXP_Fkh2', samples)
+fkh2_stat_index <-grep('STAT_Fkh2', samples) 
+  
+peaks_reproducible_kept_kept <- peaks_reproducible_kept
+peaks_reproducible_kept_dropped <- peaks_reproducible_kept
+
+for (i in conditions_exp_indices){
+  peaks_reproducible_kept_kept[[i]] <- subsetByOverlaps(peaks_reproducible_kept[[i]], 
+                                                        peaks[[fkh2_exp_index]], invert = TRUE)
+  peaks_reproducible_kept_dropped[[i]] <- subsetByOverlaps(peaks_reproducible_kept[[i]], 
+                                                           peaks[[fkh2_exp_index]])
+}
+
+for (i in conditions_stat_indices){
+  peaks_reproducible_kept_kept[[i]] <- subsetByOverlaps(peaks_reproducible_kept[[i]], 
+                                                        peaks[[fkh2_stat_index]], invert = TRUE)
+  peaks_reproducible_kept_dropped[[i]] <- subsetByOverlaps(peaks_reproducible_kept[[i]], 
+                                                           peaks[[fkh2_stat_index]])
+}
+```
+
+* save filtered peaks as BED files (kept and dropped as separate files)
+
+```{r, eval=TRUE}
+for (i in 1:length(peaks_reproducible_kept_kept)) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           conditions_w_replicates[i], 
+                           '.reproducible_untagged+Fkh2-filtered.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             conditions_w_replicates[i], 
+                             '.reproducible_untagged+Fkh2-filtered.summits.bed')
+  
+  tmp_bed <- peaks_reproducible_kept_kept[[i]]
+  
+  tmp_bed$score <- tmp_bed$score_min
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit_avg
+  end(tmp_bed) <- tmp_bed$summit_avg # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+for (i in 1:length(peaks_reproducible_kept_dropped)) {
+  filename_peaks <- paste0(peaks_filtered_dir, 
+                           conditions_w_replicates[i], 
+                           '.reproducible_untagged+Fkh2-filtered_dropped.peaks.bed')
+  filename_summits <- paste0(peaks_filtered_dir, 
+                             conditions_w_replicates[i], 
+                             '.reproducible_untagged+Fkh2-filtered_dropped.summits.bed')
+  
+  tmp_bed <- peaks_reproducible_kept_dropped[[i]]
+  
+  tmp_bed$score <- tmp_bed$score_min
+  export.bed(tmp_bed, filename_peaks, format = 'bed')
+  
+  start(tmp_bed) <- tmp_bed$summit_avg
+  end(tmp_bed) <- tmp_bed$summit_avg # there is automatic conversion to 0-based [ ) intervals (ie, closed/open)
+  export.bed(tmp_bed, filename_summits, format = 'bed')
+}
+
+rm(filename_peaks, filename_summits, tmp_bed)
+```
+
+
+
+
+```{bash, eval=TRUE}
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf11*.bw -R ./peaks_filtered/Cbf11.reproducible*summits.bed -a 300 -b 300 -o matrix11
+plotHeatmap -m matrix11 -o test11.svg --sortUsing max --sortUsingSamples 6
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf12*.bw -R ./peaks_filtered/Cbf12.reproducible*summits.bed -a 300 -b 300 -o matrix12
+plotHeatmap -m matrix12 -o test12.svg --sortUsing max --sortUsingSamples 4
+```
+
+```{bash, eval=TRUE}
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf11*plus*.bw ./coverage_ChIP-nexus/Mga2*plus*.bw -R ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin11
+plotHeatmap -m matrix_fin11 -o ./tmp/test_fin11.svg --sortUsing sum --sortUsingSamples 3 --missingDataColor red --colorMap Greys
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus/Cbf12*plus*.bw -R ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin12
+plotHeatmap -m matrix_fin12 -o ./tmp/test_fin12.svg --sortUsing sum --sortUsingSamples 2 --missingDataColor red --colorMap Greys 
+```
+
+After coverage normalization was changed to CPM-only
+
+```{bash, eval=TRUE}
+computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf11*plus*.bw ./coverage_ChIP-nexus_CPM/Mga2*plus*.bw -R ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin11_CPM
+plotHeatmap -m matrix_fin11_CPM -o ./tmp/test_fin11_CPM.svg --sortUsing sum --sortUsingSamples 3 --missingDataColor red --colorMap Greys
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf12*plus*.bw -R ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin12_CPM
+plotHeatmap -m matrix_fin12_CPM -o ./tmp/test_fin12_CPM.svg --sortUsing sum --sortUsingSamples 2 --missingDataColor red --colorMap Greys 
+```
+
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,497 @@
+---
+title: ChIP-nexus of Cbf11, Cbf11DBM, Cbf12, Cbf12DBM, Mga2 and Fkh2 (with spike-in)
+author: "Martin Převorovský, prevorov@natur.cuni.cz, www.GenoMik.cz"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Rsamtools)
+
+genome_dir <- './genome/'
+bam_dir <- './BAM_ChIP-nexus/'
+fastq_clean_dir <- './FASTQ_ChIP-nexus_clean/'
+nexus_barcode <- 'CTGA'
+CPU <- 7
+```
+
+Variables for shell scripts are stored in the file "shell_variables_ChIP-seq.sh" and can be modified as needed:
+
+```{bash list_variables}
+cat shell_variables_ChIP-nexus.sh
+```
+
+
+# Getting the raw ChIP-nexus read datasets
+
+THIS SECTION WILL ONLY BECOME RELEVANT ONCE THE SEQUENCING DATA ARE PUBLIC in ARRAYEXPRESS
+
+All data and metadata can be obtained from ArrayExpress at <https://www.ebi.ac.uk/arrayexpress/experiments/XXXXXXXX/>.
+
+```{bash, eval=FALSE, message=FALSE}
+source shell_variables_ChIP-seq.sh
+
+wget -N --no-verbose https://www.ebi.ac.uk/arrayexpress/files/XXXXXXXX/XXXXXXXX.sdrf.txt
+mapfile -t ftp_links < <(tail -n +2 XXXXXXXX.sdrf.txt | cut -f30)
+mapfile -t ftp_names < <(tail -n +2 XXXXXXXX.sdrf.txt | cut -f28)
+
+mkdir -p "${fastq_dir}"
+for i in ${!ftp_links[@]};
+do
+  wget --no-verbose -O "${fastq_dir}${ftp_names[${i}]}" "${ftp_links[${i}]}"
+done
+```
+
+
+# *Schizosaccharomyces pombe* and *Saccharomyces cerevisiae* genome sequence and annotation
+
+```{bash}
+samtools --version
+```
+
+```{bash, message=FALSE, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mkdir -p "${genome_dir}"
+wget -N --no-verbose --directory-prefix="${genome_dir}"  ftp://ftp.pombase.org/pombe/genome_sequence_and_features/gff3/Schizosaccharomyces_pombe_all_chromosomes.gff3.gz
+wget -N --no-verbose --directory-prefix="${genome_dir}"  ftp://ftp.pombase.org/pombe/genome_sequence_and_features/genome_sequence/Schizosaccharomyces_pombe_chromosome_I.fa.gz
+wget -N --no-verbose --directory-prefix="${genome_dir}"  ftp://ftp.pombase.org/pombe/genome_sequence_and_features/genome_sequence/Schizosaccharomyces_pombe_chromosome_II.fa.gz
+wget -N --no-verbose --directory-prefix="${genome_dir}"  ftp://ftp.pombase.org/pombe/genome_sequence_and_features/genome_sequence/Schizosaccharomyces_pombe_chromosome_III.fa.gz
+wget -N --no-verbose --directory-prefix="${genome_dir}" ftp://ftp.pombase.org/pombe/genome_sequence_and_features/genome_sequence/Schizosaccharomyces_pombe_mitochondrial_chromosome.fa.gz
+
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr01.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr02.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr03.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr04.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr05.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr06.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr07.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr08.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr09.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr10.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr11.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr12.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr13.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr14.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr15.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chr16.fsa
+wget -N --no-verbose --directory-prefix="${genome_dir}" https://downloads.yeastgenome.org/sequence/S288C_reference/chromosomes/fasta/chrmt.fsa
+
+zcat "${genome_dir}Schizosaccharomyces_pombe_all_chromosomes.gff3.gz" > "${annotation}"
+
+zcat `ls "${genome_dir}"* | grep fa\.gz$` > "${genome}"
+cat `ls "${genome_dir}"* | grep \.fsa$` >> "${genome}"
+
+samtools faidx "${genome}"
+cut -f1,2 "${genome}.fai" > "${genome_dir}chrom.sizes"
+```
+
+
+# QC of raw sequence reads
+
+* Technical quality of library construction and sequencing run was tested using fastQC (libraries were constructed in-house at GenoMik).
+
+* Sequencing was performed at IMG CAS on an Illumina NextSeq 550 instrument.
+
+* Illumina sequencers expect a diverse library for cluster detection and calibration during initial several sequencing cycles. But this condition is not fulfilled by the ChIP-nexus libraries that contain a fixed barcode sequence close to the 5' end (positions 6-9). To circumvent this problem, the pooled libraries were sequenced twice, each time occupying only ~50% of the sequencing capacity of the run.
+
+```{bash}
+fastqc --version
+multiqc --version
+```
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mkdir -p "${QC_dir}"
+replace=".fastq.gz"
+rename 's/'"${replace}"'/'"_run1${replace}"'/' "${fastq_dir1}"*
+rename 's/'"${replace}"'/'"_run2${replace}"'/' "${fastq_dir2}"*
+
+mapfile -t fastq_files < <(ls -1 "${fastq_dir1}" | grep "${fastq_file_ext}")
+for i in ${fastq_files[@]};
+do
+  fastqc --quiet --outdir "${QC_dir}" --threads "${CPU}" "${fastq_dir1}${i}"
+done
+
+mapfile -t fastq_files < <(ls -1 "${fastq_dir2}" | grep "${fastq_file_ext}")
+for i in ${fastq_files[@]};
+do
+  fastqc --quiet --outdir "${QC_dir}" --threads "${CPU}" "${fastq_dir2}${i}"
+done
+
+multiqc -f -m fastqc -i ChIP-nexus -o "${QC_dir}" "${QC_dir}"
+```
+
+Results of QC:
+
+* 76 nt SE reads
+
+* 3.2-20.4M reads per fastq file
+
+* QC results for individual runs are almost identical
+
+* read quality scores are very good (except for sample B08 - untagged WT), only the last position shows lower quality. Quality trimming will be performed to be on the safe side
+
+* nexus barcode present at correct position in >85% of reads
+
+* all files give error on per base sequence content (this is caused by the presence of the nexus barcode; sample B08 shows low complexity)
+
+* 5 files give warning/error on GC content (error in B08)
+
+* 17 samples give warning/error on read duplication levels (but only B08 is really bad, otherwise the library complexity is rather high - likely caused by the presence of UMI)
+
+* overrepresented sequences found in sample B08 (TruSeq adapters)
+
+* adapter contamination detected in ~3-15% of reads (62% for sample B08 !), adapter trimming will be needed
+
+
+# Read cleaning and QC
+
+## Read trimming
+
+* remove Illumina adapters
+
+* trim parts of the reads where average base quality in a 4 nt window drops below 20
+
+* only keep trimmed reads that are at least 29 nt long (9 nt nexus barcode + 20 nt gDNA fragment)
+
+```{bash}
+java -jar /opt/Trimmomatic-0.39/trimmomatic-0.39.jar -version
+```
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mkdir -p "${fastq_clean_dir}"
+
+mapfile -t fastq_files < <(ls -1 "${fastq_dir1}" | grep "${fastq_file_ext}")
+for i in ${fastq_files[@]};
+do
+  outfile="${fastq_clean_dir}${i}"
+  outfile="${outfile/.gz/.trimmed.gz}"
+  java -jar /opt/Trimmomatic-0.39/trimmomatic-0.39.jar SE -phred33 -threads "${CPU}" "${fastq_dir1}${i}" "${outfile}" ILLUMINACLIP:/opt/Trimmomatic-0.39/adapters/TruSeq3-SE.fa:2:30:10 SLIDINGWINDOW:4:20 MINLEN:29
+done
+
+mapfile -t fastq_files < <(ls -1 "${fastq_dir2}" | grep "${fastq_file_ext}")
+for i in ${fastq_files[@]};
+do
+  outfile="${fastq_clean_dir}${i}"
+  outfile="${outfile/.gz/.trimmed.gz}"
+  java -jar /opt/Trimmomatic-0.39/trimmomatic-0.39.jar SE -phred33 -threads "${CPU}" "${fastq_dir2}${i}" "${outfile}" ILLUMINACLIP:/opt/Trimmomatic-0.39/adapters/TruSeq3-SE.fa:2:30:10 SLIDINGWINDOW:4:20 MINLEN:29
+done
+```
+
+## Remove reads without intact Nexus barcode
+
+* It is important to only analyze reads with an intact Nexus barcode. This will make sure that the protein-DNA crosslink position is identified accurately.
+
+* Also UMI (nt 1-5) is extracted and used as read name; the whole Nexus barcode (first 9 nt) is then trimmed from the read. The new read names (UMI) will be needed later for final filtering of any remaining PCR duplicates.
+
+* Reads with 'N' in the UMI sequence (= failed basecalling) are ambiguous regarding PCR duplicate filtering and thus are discarded.
+
+```{r, eval=TRUE}
+dir_tmp <- getwd()
+setwd(fastq_clean_dir)
+fastq_files <- list.files(getwd(), pattern = 'trimmed.gz$')
+for (i in fastq_files){
+  file_in <- gzcon(file(i, 'rb'))
+  file_out <- gzcon(file(paste0(substr(i, 1, nchar(i) - 3), '.barcode.gz'), 'wb'))
+  while(TRUE){
+    read <- readLines(file_in, 4)
+    if(length(read) == 0){
+      break()
+    }
+    barcode <- substr(read[2], 6, 9)
+    UMI <- substr(read[2], 1, 5)
+    if(barcode == nexus_barcode & !'N' %in% unlist(strsplit(UMI, ''))){
+      read[1] <- paste0('@', UMI)
+      read[2] <- substr(read[2], 10, nchar(read[2]))
+      read[4] <- substr(read[4], 10, nchar(read[4]))
+      writeLines(read, file_out)
+    }
+  }
+  close(file_in)
+  close(file_out)
+  file.remove(i)
+}
+setwd(dir_tmp)
+```
+
+## QC of cleaned reads
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mkdir -p "${QC_clean_dir}"
+mapfile -t fastq_files < <(ls -1 "${fastq_clean_dir}" | grep "barcode\.gz$")
+for i in ${fastq_files[@]};
+do
+  fastqc --quiet --outdir "${QC_clean_dir}" --threads "${CPU}" "${fastq_clean_dir}${i}"
+done
+
+multiqc -f -m fastqc -i ChIP-nexus_clean -o "${QC_clean_dir}" "${QC_clean_dir}"
+```
+
+Results of QC:
+
+* 2.5-15M reads survived
+
+* the majority of reads are >65 nt
+
+* 24 samples give warning/error on per base sequence content (i.e., after the nexus barcode has been removed)
+
+* adapter contamination removed (a little bit remains at the very 3' end), with the exception of sample B08 (gives warning), which still contains ~18% of reads with the Illumina universal adapter at their 3' ends.
+
+
+# Read mapping into the hybrid *S. pombe* & *S. cerevisiae* genome
+
+## Mapping
+
+* Mapped reads are sorted by their names (= UMI). This will be important for filtering of PCR duplicates
+
+```{bash}
+hisat2 --version
+```
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+# build HISAT2 index
+hisat2-build --quiet -p "${CPU}" "${genome}" "${genome}"
+
+# map
+mkdir -p "${bam_dir}"
+mapfile -t fastq_files < <(ls -1 "${fastq_clean_dir}" | grep "barcode\.gz$")
+for i in ${!fastq_files[@]};
+do
+	infile="${fastq_clean_dir}${fastq_files[${i}]}"
+	outfile="${bam_dir}${fastq_files[${i}]}.sam"
+  echo "${outfile}"
+	hisat2 -x "${genome}" -U "${infile}" --threads "${CPU}" --no-spliced-alignment -k 15 | samtools view -Sh -F 256 --threads "${CPU}" - | samtools sort --threads "${CPU}" -n -o "${outfile}" - 
+	samtools view -c --threads "${CPU}" "${outfile}"
+done
+```
+
+Notes
+
+* Since binding sites are expected at repeat regions, HISAT was set to search for up to 15 matching positions (this allows even for testing all Tf2 and dh/dg repeats in the genome), then only the best (marked as primary by HISAT) alignment was kept.
+
+* Alignment rate was >89% (sample B08 had only 60%)
+
+## Merging corresponding samples from run1 and run2
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mapfile -t sam_files1 < <(ls -1 "${bam_dir}" | grep "_run1" | grep "barcode\.gz\.sam$")
+mapfile -t sam_files2 < <(ls -1 "${bam_dir}" | grep "_run2" | grep "barcode\.gz\.sam$")
+for i in ${!sam_files1[@]};
+do
+	infile1="${bam_dir}${sam_files1[${i}]}"
+	infile2="${bam_dir}${sam_files2[${i}]}"
+	outfile="${infile1/_run1/}"
+  echo "${outfile}"
+	samtools merge -f -n --threads "${CPU}" - "${infile1}" "${infile2}" | samtools sort --threads "${CPU}" -n -o "${outfile}" - 
+	samtools view -c --threads "${CPU}" "${outfile}"
+	rm "${infile1}"
+	rm "${infile2}"
+done
+```
+
+
+# Removal of PCR duplicates
+
+This step serves to remove PCR duplicates (the same UMI, the same mapping position). Compared to removal of only those reads that are 100% identical in sequence (UMI + target DNA), this approach is more robust against PCR/sequencing errors (which might conceal the fact that some non-identical reads are in fact PCR duplicates).
+
+```{python, eval=TRUE, python.reticulate = FALSE}
+import glob
+import os
+
+sam_files = glob.glob('./BAM_ChIP-nexus/*.barcode.gz.sam')
+for i in sam_files:
+  sam_file_in = open(i, 'r')
+  sam_file_out = open(i[0:-4] + '.dedup.sam', 'w')
+
+  lines = []
+  lines_split = []
+  IDs = []
+  lines_dedup = []
+  
+  while True:
+    line = sam_file_in.readline()
+    if len(line) == 0:
+      break
+    if line[0] == '@':
+      sam_file_out.writelines(line)
+      sam_file_out.flush()
+    else:
+      lines.append(line)
+      lines_split.append(line.split('\t'))
+      current_UMI = lines_split[-1][0]
+      break
+
+  while True:
+    line = sam_file_in.readline()
+    if len(line) == 0:
+      for j in range(len(lines)):
+        line_flags = bin(int(lines_split[j][1]))
+        if len(line_flags) >= 7:
+          line_ID = lines_split[j][0] + line_flags[-5] + lines_split[j][2] + lines_split[j][3]
+        else:
+          line_ID = lines_split[j][0] + '0' + lines_split[j][2] + lines_split[j][3]
+        if line_ID not in IDs:
+          IDs.append(line_ID)
+          lines_dedup.append(lines[j])
+      sam_file_out.writelines(lines_dedup)
+      sam_file_out.flush()
+      break
+    
+    else:
+      line_split = line.split('\t')
+      if line_split[0] == current_UMI:
+        lines.append(line)
+        lines_split.append(line_split)
+      else:
+        for j in range(len(lines)):
+          line_flags = bin(int(lines_split[j][1]))
+          if len(line_flags) >= 7:
+            line_ID = lines_split[j][0] + line_flags[-5] + lines_split[j][2] + lines_split[j][3]
+          else:
+            line_ID = lines_split[j][0] + '0' + lines_split[j][2] + lines_split[j][3]
+          if line_ID not in IDs:
+            IDs.append(line_ID)
+            lines_dedup.append(lines[j])
+        sam_file_out.writelines(lines_dedup)
+        sam_file_out.flush()
+    
+        lines = [line]
+        lines_split = [line_split]
+        current_UMI = line_split[0]
+        IDs = []
+        lines_dedup = []
+
+  sam_file_in.close()
+  os.remove(i)
+  sam_file_out.close()
+```
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+sam_files=`ls -1 "${bam_dir}" | grep "\.dedup.sam$"`
+for i in ${sam_files};
+do
+	infile="${bam_dir}${i}"
+	outfile="${infile/.sam/.bam}"
+  echo "${outfile}"
+  samtools view -Bh --threads "${CPU}" "${infile}" | samtools sort --threads "${CPU}" -o "${outfile}" -
+  samtools index "${outfile}"
+	samtools view -c --threads "${CPU}" "${outfile}"
+  rm "${infile}"
+done
+```
+
+* mapping rates >92% (sample B08 only ~66%)
+
+* ~1.2-14.7M reads survived
+
+
+# Create genome coverage profiles
+
+* global changes in signal intensity are expected in DBM samples
+
+* chromatin extract from *S. cerevisiae* with TAP-tagged histone H2A.2 (*HTA2* / YBL003c; obtained from Euroscarf) was spiked into the sample prior to ChIP; the number of reads mapping to *S. cerevisiae* genome will be used as a scaling factor
+
+* plus and minus strand coverage is computed separately to allow precise localization of crosslink site (= where the target protein bound to DNA).
+
+* budding yeast chromosomes are excluded from the normalization calculations
+
+```{r, eval=TRUE}
+chroms <- read.delim(paste0(genome_dir, 'chrom.sizes'), stringsAsFactors = FALSE, header = FALSE)
+chroms[, 3] <- chroms[, 2]
+chroms[, 2] <- 0
+chroms <- chroms[5:nrow(chroms), ]
+write.table(chroms, file = paste0(genome_dir, 'chrom.blacklist.bed'), row.names = FALSE, col.names = FALSE, quote = FALSE, sep = '\t')
+```
+
+```{bash}
+deeptools --version
+igv.sh --version
+```
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+# coverage for individual files
+mkdir -p "${coverage_dir}"
+ls -1 "${bam_dir}" | grep "\.bam$" > "${bam_file_list}"
+mapfile -t bam_files < "${bam_file_list}"
+for i in ${!bam_files[@]};
+do
+  scaling_factor=`samtools idxstats "${bam_dir}${bam_files[${i}]}" | tail -n 18 | head -n 17 | cut -f3 | paste -s -d+ | bc`
+  scaling_factor=`echo "scale=6; 1/(${scaling_factor}/1000000)" | bc`
+	input_file="${bam_dir}${bam_files[${i}]}"
+	bamCoverage --binSize "${bin_size}" --normalizeUsing CPM -p "${CPU}" --bam "${input_file}" -o "${coverage_dir}${bam_files[${i}]}.plus.bw" --scaleFactor "${scaling_factor}" --Offset 1 1 --samFlagExclude 16 --blackListFileName "${genome_dir}${chrom_blacklist}"
+	scaling_factor=`echo "${scaling_factor}*-1" | bc`
+	bamCoverage --binSize "${bin_size}" --normalizeUsing CPM -p "${CPU}" --bam "${input_file}" -o "${coverage_dir}${bam_files[${i}]}.minus.bw" --scaleFactor "${scaling_factor}" --Offset 1 1 --samFlagInclude 16 --blackListFileName "${genome_dir}${chrom_blacklist}"
+done
+
+# average coverage tracks across biological replicates
+samples=("Cbf11" "Cbf11DBM" "Cbf11_mga2KO" "Mga2" "Mga2_cbf11KO" "Cbf12" "Cbf12DBM")
+indices=("_(B07|B04|B09)_" "_(B03|B10|B18)_" "_(B22|B25|B28)_" "_(B02|B01|B11)_" "_(B21|B23|B27)_" "_(B05|B12|B15)_" "_(B06|B13|B16)_")
+for i in {0..6};
+do
+  mapfile -t bw_files_plus < <(ls -1 -d "${coverage_dir}"* | grep "\.plus\.bw$" | grep -E "${indices[${i}]}")
+  wiggletools mean "${bw_files_plus[@]}" | wigToBigWig stdin "${genome_dir}chrom.sizes" "${coverage_dir}${samples[${i}]}.plus.mean.bw"
+  
+  mapfile -t bw_files_minus < <(ls -1 -d "${coverage_dir}"* | grep "\.minus\.bw$" | grep -E "${indices[${i}]}")
+  wiggletools mean "${bw_files_minus[@]}" | wigToBigWig stdin "${genome_dir}chrom.sizes" "${coverage_dir}${samples[${i}]}.minus.mean.bw"
+done
+```
+
+* All coverage files were checked visually in IGV (btw. to verify sample identity / strain genotypes)
+
+* The B08 IP from the untagged strain did not have the spike-in normalization control added. Therefore its normalized coverage range is not comparable to any other samples
+
+
+
+
+Normalizing to CPM (with blacklisting of S. cerevisiae chromosomes) and spike-in derived scaling factors did not produce comparable background signal between samples (Cbf12 vs Cbf12DBM; Cbf11/DBM do not seem to be affected much).
+
+Testing showed that normalization to CPM alone (with blacklisting and --exactScaling) produces much more comparable background coverage for Cbf12 and Cbf12DBM.
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+coverage_dir="./coverage_ChIP-nexus_CPM/"
+
+# coverage for individual files
+mkdir -p "${coverage_dir}"
+ls -1 "${bam_dir}" | grep "\.bam$" > "${bam_file_list}"
+mapfile -t bam_files < "${bam_file_list}"
+for i in ${!bam_files[@]};
+do
+	input_file="${bam_dir}${bam_files[${i}]}"
+	bamCoverage --binSize "${bin_size}" -p "${CPU}" --bam "${input_file}" -o "${coverage_dir}${bam_files[${i}]}.plus.bw"  --Offset 1 1 --samFlagExclude 16 --blackListFileName "${genome_dir}${chrom_blacklist}" --exactScaling --normalizeUsing CPM
+	bamCoverage --binSize "${bin_size}" -p "${CPU}" --bam "${input_file}" -o "${coverage_dir}${bam_files[${i}]}.minus.bw" --Offset 1 1 --samFlagInclude 16 --blackListFileName "${genome_dir}${chrom_blacklist}" --exactScaling --normalizeUsing CPM --scaleFactor -1
+done
+
+# average coverage tracks across biological replicates
+samples=("Cbf11" "Cbf11DBM" "Cbf11_mga2KO" "Mga2" "Mga2_cbf11KO" "Cbf12" "Cbf12DBM")
+indices=("_(B07|B04|B09)_" "_(B03|B10|B18)_" "_(B22|B25|B28)_" "_(B02|B01|B11)_" "_(B21|B23|B27)_" "_(B05|B12|B15)_" "_(B06|B13|B16)_")
+for i in {0..6};
+do
+  mapfile -t bw_files_plus < <(ls -1 -d "${coverage_dir}"* | grep "\.plus\.bw$" | grep -E "${indices[${i}]}")
+  wiggletools mean "${bw_files_plus[@]}" | wigToBigWig stdin "${genome_dir}chrom.sizes" "${coverage_dir}${samples[${i}]}.plus.mean.bw"
+  
+  mapfile -t bw_files_minus < <(ls -1 -d "${coverage_dir}"* | grep "\.minus\.bw$" | grep -E "${indices[${i}]}")
+  wiggletools mean "${bw_files_minus[@]}" | wigToBigWig stdin "${genome_dir}chrom.sizes" "${coverage_dir}${samples[${i}]}.minus.mean.bw"
+done
+```
+
+***
+
+```{r}
+sessionInfo()
+```

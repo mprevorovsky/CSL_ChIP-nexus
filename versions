@@ -1,0 +1,26 @@
+samtools 1.10
+Using htslib 1.10.2-3
+Copyright (C) 2019 Genome Research Ltd.
+
+
+multiqc, version 1.11
+
+
+FastQC v0.11.9
+
+
+0.39
+
+
+/usr/bin/hisat2-align-s version 2.1.0
+64-bit
+Built on Debian
+11 February 2020
+Compiler: gcc version 9.2.1 20200203 (Ubuntu 9.2.1-28ubuntu1) 
+Options: -O3   -funroll-loops -g3 -Wdate-time -D_FORTIFY_SOURCE=2 
+Sizeof {int, long, long long, void*, size_t, off_t}: {4, 8, 8, 8, 8, 8}
+
+
+deeptools 3.5.1
+
+wigToBigWig 4
