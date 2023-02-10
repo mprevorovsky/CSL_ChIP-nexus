@@ -36,7 +36,11 @@ bam_file_list="BAM_files_ChIP-nexus"
 bam_summary_file="multiBamSummary.npz"
 # directory for genome coverage data
 coverage_dir="./coverage_ChIP-nexus/"
-# directory for peak data
+# directory for raw peak data
 peak_dir="./peaks/"
+# directory for filtered peak data
+peaks_filtered_dir="./peaks_filtered/"
+# directory for compraisons of peak data between samples (overlaps etc)
+peaks_compare_dir="./peaks_comparisons/"
 # a BED file containing list of S. cerevisiae chromosomes (for exclusion during coverage normalization)
 chrom_blacklist="chrom.blacklist.bed"

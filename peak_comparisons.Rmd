@@ -1,0 +1,74 @@
+---
+title: "Comparisons of ChIP-nexus peaks between CSL proteins and Mga2"
+author: "Martin Převorovský, prevorov@natur.cuni.cz, http://www.GenoMik.cz"
+output: html_document
+---
+
+```{bash setup, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mkdir -p "${peaks_compare_dir}"
+mkdir -p "${image_dir}"
+```
+
+
+Cbf11 and Cbf11DBM comparisons
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+input_file_pattern=".reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING"
+bed_ext=".bed"
+
+bedtools intersect -wa -u -a "${peaks_filtered_dir}Cbf11${input_file_pattern}${bed_ext}" -b "${peaks_filtered_dir}Cbf11DBM${input_file_pattern}${bed_ext}" > "${peaks_compare_dir}Cbf11_Cbf11DBM${input_file_pattern}.common${bed_ext}"
+
+bedtools intersect -a "${peaks_filtered_dir}Cbf11${input_file_pattern}${bed_ext}" -b "${peaks_filtered_dir}Cbf11DBM${input_file_pattern}${bed_ext}" -v > "${peaks_compare_dir}Cbf11_Cbf11DBM${input_file_pattern}.Cbf11_unique${bed_ext}"
+
+bedtools intersect -b "${peaks_filtered_dir}Cbf11${input_file_pattern}${bed_ext}" -a "${peaks_filtered_dir}Cbf11DBM${input_file_pattern}${bed_ext}" -v > "${peaks_compare_dir}Cbf11_Cbf11DBM${input_file_pattern}.Cbf11DBM_unique${bed_ext}"
+```
+
+Cbf12 and Cbf12DBM comparisons
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+input_file_pattern=".reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING"
+bed_ext=".bed"
+
+bedtools intersect -wa -u -a "${peaks_filtered_dir}Cbf12${input_file_pattern}${bed_ext}" -b "${peaks_filtered_dir}Cbf12DBM${input_file_pattern}${bed_ext}" > "${peaks_compare_dir}Cbf12_Cbf12DBM${input_file_pattern}.common${bed_ext}"
+
+bedtools intersect -a "${peaks_filtered_dir}Cbf12${input_file_pattern}${bed_ext}" -b "${peaks_filtered_dir}Cbf12DBM${input_file_pattern}${bed_ext}" -v > "${peaks_compare_dir}Cbf12_Cbf12DBM${input_file_pattern}.Cbf12_unique${bed_ext}"
+
+bedtools intersect -b "${peaks_filtered_dir}Cbf12${input_file_pattern}${bed_ext}" -a "${peaks_filtered_dir}Cbf12DBM${input_file_pattern}${bed_ext}" -v > "${peaks_compare_dir}Cbf12_Cbf12DBM${input_file_pattern}.Cbf12DBM_unique${bed_ext}"
+```
+
+
+Get FASTA sequences under peaks for motif analysis
+
+```{bash, eval=TRUE}
+source shell_variables_ChIP-nexus.sh
+
+mapfile -t peak_files < <(ls -1 -d "${peaks_compare_dir}"* | grep .bed$)
+for i in ${peak_files[@]};
+do
+  bedtools getfasta -fi "${genome}" -bed "${i}" -fo "${i/.bed/.fasta}"
+done
+```
+
+
+Diagnostic plots
+
+```{bash, eval=FALSE}
+source shell_variables_ChIP-nexus.sh
+
+computeMatrix scale-regions -S "${coverage_dir}"Cbf11*.bw -R "${peaks_compare_dir}"Cbf11_Cbf11DBM*.bed -a 300 -b 300 -m 100 -o "${image_dir}Cbf11_Cbf11DBM_computeMatrix"
+plotHeatmap -m "${image_dir}Cbf11_Cbf11DBM_computeMatrix" -o "${image_dir}Cbf11_Cbf11DBM_computeMatrix.svg" --sortUsing max --sortUsingSamples 6
+
+computeMatrix scale-regions -S "${coverage_dir}"Cbf12*.bw -R "${peaks_compare_dir}"Cbf12_Cbf12DBM*.bed -a 300 -b 300 -m 100 -o "${image_dir}Cbf12_Cbf12DBM_computeMatrix"
+plotHeatmap -m "${image_dir}Cbf12_Cbf12DBM_computeMatrix" -o "${image_dir}Cbf12_Cbf12DBM_computeMatrix.svg" --sortUsing max --sortUsingSamples 4
+```
+
+
+```{r}
+sessionInfo()
+```

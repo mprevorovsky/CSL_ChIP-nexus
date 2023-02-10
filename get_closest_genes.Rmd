@@ -24,34 +24,32 @@ coding_genes_gff_ext=".genes_coding.gff3"
 grep -w gene "${annotation}" | bedtools sort -i - > "${annotation/$input_gff_ext/$genes_gff_ext}"
 grep -w gene "${annotation}" | grep -v SP.*RNA | bedtools sort -i - > "${annotation/$input_gff_ext/$coding_genes_gff_ext}"
 
-
-peaks_filtered_dir="./peaks_filtered/"
-input_bed_ext=".bed"
+bed_ext=".bed"
 
 closest_ext=".CLOSEST"
 closest_coding_ext=".CLOSEST_CODING"
 
-#closest_up_ext=".CLOSEST_UP"
-#closest_coding_up_ext=".CLOSEST_CODING_UP"
-
-peak_files=("${peaks_filtered_dir}Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed" "${peaks_filtered_dir}Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed")
-#mapfile -t peak_files < <(ls -1 "${peaks_filtered_dir}" | grep "Fkh2-filtered\.summits\.bed$")
+mapfile -t peak_files < <(ls -1 "${peaks_filtered_dir}" | grep "Fkh2-filtered\.summits\.bed$")
 for i in ${peak_files[@]};
 do
-  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b -iu > "${i/$input_bed_ext/$closest_bed_up_ext}"
-    #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b > "${i/$input_bed_ext/$closest_ext}"
-    bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${i/$input_bed_ext/$closest_ext}"
+  bedtools closest -a "${peaks_filtered_dir}${i}" -b "${annotation/$input_gff_ext/$genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${peaks_filtered_dir}${i/$bed_ext/$closest_ext}"
 
-    
-  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b -iu > "${i/$input_bed_ext/$closest_coding_up_bed_ext}"
-  #bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b > "${i/$input_bed_ext/$closest_coding_ext}"
-  bedtools closest -a "${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${i/$input_bed_ext/$closest_coding_ext}"
+  bedtools closest -a "${peaks_filtered_dir}${i}" -b "${annotation/$input_gff_ext/$coding_genes_gff_ext}" -D b -t "first" | cut -f 15 | cut -d "=" -f 2 | cut -d ";" -f 1 > "${peaks_filtered_dir}${i/$bed_ext/$closest_coding_ext}"
+done
+
+
+mapfile -t peak_files < <(ls -1 -d "${peaks_filtered_dir}"* | grep "Fkh2-filtered\.peaks\.bed$")
+mapfile -t closest_genes_files < <(ls -1 -d "${peaks_filtered_dir}"* | grep "${closest_coding_ext}$")
+for i in ${!peak_files[@]};
+do
+  paste -d "\t" "${peak_files[$i]}" "${closest_genes_files[$i]}" > "${closest_genes_files[$i]/summits/peaks}${bed_ext}"
 done
 ```
 
 
 
-diagnostic plots
+Diagnostic plots
+WARNING: This part relies on manually created files (*.CLOSEST_CODING2)
 
 Cbf11
 
@@ -107,10 +105,4 @@ text(x = 1:nrow(cbf12_peaks) - 1,
      y = cbf12_peaks[, 5] + 1,
      labels = cbf12_peaks$name,
      cex = 0.3, srt = 90, xpd = TRUE, adj = 0)
-```
-
-```{bash, eval=FALSE}
-paste -d "\t" ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING | sort -n -k 5 -r - > ./peaks_filtered/Cbf11.bed
-
-paste -d "\t" ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.CLOSEST_CODING | sort -n -k 5 -r -  > ./peaks_filtered/Cbf12.bed
 ```
