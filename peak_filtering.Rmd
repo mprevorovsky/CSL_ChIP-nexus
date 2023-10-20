@@ -260,8 +260,42 @@ After coverage normalization was changed to CPM-only
 computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf11*plus*.bw ./coverage_ChIP-nexus_CPM/Mga2*plus*.bw -R ./peaks_filtered/Cbf11.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin11_CPM
 plotHeatmap -m matrix_fin11_CPM -o ./tmp/test_fin11_CPM.svg --sortUsing sum --sortUsingSamples 3 --missingDataColor red --colorMap Greys
 
-computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf12*plus*.bw -R ./peaks_filtered/Cbf12.reproducible_untagged+Fkh2-filtered.summits.bed -a 400 -b 400 -o ./tmp/matrix_fin12_CPM
-plotHeatmap -m matrix_fin12_CPM -o ./tmp/test_fin12_CPM.svg --sortUsing sum --sortUsingSamples 2 --missingDataColor red --colorMap Greys 
+computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf12.plus.mean.bw ./coverage_ChIP-nexus_CPM/Cbf12DBM.plus.mean.bw -R ./peaks_filtered/score20/Cbf12.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.bed -a 400 -b 400 -o ./tmp/matrix_fin12_CPM
+plotHeatmap -m ./tmp/matrix_fin12_CPM -o ./tmp/test_fin12_CPM.svg --sortUsing sum --sortUsingSamples 1 --missingDataColor red --colorMap Greys --plotType "fill" --refPointLabel "summit" --xAxisLabel "" --regionsLabel "read coverage at top 130 Cbf12 peaks (score >= 20)" --samplesLabel "Cbf12" "Cbf12DBM" --yAxisLabel "mean read coverage" --legendLocation "none" --heatmapHeight 10
+
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf12.plus.mean.bw ./coverage_ChIP-nexus_CPM/Cbf12DBM.plus.mean.bw -R ./peaks_filtered/score20/Cbf12.reproducible_untagged-filtered.peaks_S20.bed -a 400 -b 400 -o ./tmp/matrix_fin12_CPM_noFkh2
+plotHeatmap -m ./tmp/matrix_fin12_CPM_noFkh2 -o ./tmp/test_fin12_CPM_noFkh2.svg --sortUsing sum --sortUsingSamples 1 --missingDataColor red --colorMap Greys --plotType "fill" --refPointLabel "summit" --xAxisLabel "" --regionsLabel "read coverage at Cbf12 peaks (score >= 20)" --samplesLabel "Cbf12" "Cbf12DBM" --yAxisLabel "mean read coverage" --legendLocation "none" --heatmapHeight 10
+
+
+computeMatrix reference-point -S ./coverage_ChIP-nexus_CPM/Cbf12.plus.mean.bw ./coverage_ChIP-nexus_CPM/Cbf12DBM.plus.mean.bw -R ./peaks_filtered/score20/Cbf12.reproducible_untagged-filtered.peaks_S20_top100.bed -a 400 -b 400 -o ./tmp/matrix_fin12_CPM_noFkh2_top100
+plotHeatmap -m ./tmp/matrix_fin12_CPM_noFkh2_top100 -o ./tmp/test_fin12_CPM_noFkh2_top100.svg --sortUsing sum --sortUsingSamples 1 --missingDataColor red --colorMap Greys --plotType "fill" --refPointLabel "summit" --xAxisLabel "" --regionsLabel "read coverage at top 100 Cbf12 peaks" --samplesLabel "Cbf12" "Cbf12DBM" --yAxisLabel "mean read coverage" --legendLocation "none" --heatmapHeight 10
+```
+
+
+
+
+Filter out peaks with low score and repeat all analyses
+
+Get FASTA sequences under peaks for motif analysis
+
+```{bash, eval = TRUE}
+source shell_variables_ChIP-nexus.sh
+
+input_file_pattern=".reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING.bed"
+dir_score="${peaks_filtered_dir}score20/"
+mkdir -p "${dir_score}"
+
+mapfile -t peak_files < <(ls -1 "${peaks_filtered_dir}" | grep "${input_file_pattern}")
+for i in ${peak_files[@]};
+do
+  awk '{ if ($5 >= 20) { print } }' "${peaks_filtered_dir}${i}" | sort -k5 -n > "${dir_score}${i/.bed/_S20.bed}"
+  bedtools getfasta -fi "${genome}" -bed "${dir_score}${i/.bed/_S20.bed}" -fo "${dir_score}${i/.bed/_S20.fasta}"
+done
+
+# remove manually identified artifacts in Cbf11 data
+sed -e '1,2d;4,6d;10,11d;15d' -i "${dir_score}Cbf11.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.bed"
+bedtools getfasta -fi "${genome}" -bed "${dir_score}Cbf11.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.bed" -fo "${dir_score}Cbf11.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.fasta"
 ```
 
 

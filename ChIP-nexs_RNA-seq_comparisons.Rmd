@@ -1,0 +1,121 @@
+---
+title: "Comparisons of ChIP-nexus with RNA-seq results"
+author: "Martin Převorovský, prevorov@natur.cuni.cz, http://www.GenoMik.cz"
+output: html_document
+---
+
+Cbf11 and Cbf11DBM comparisons
+
+```{r setup}
+image_dir <- './images/'
+deg_dir <- '../2022_RNA-seq_mga2/DEG_RNA-seq_ALL/'
+peaks_filtered_dir <- './peaks_filtered/'
+
+padj_threshold <- 0.05
+```
+
+```{r, eval=TRUE}
+deg.cbf11 <- read.csv(paste0(deg_dir, 'DESeq2results_cbf11-YES_vs_WT-YES.csv'), row.names = 1)
+deg.cbf11dbm <- read.csv(paste0(deg_dir, 'DESeq2results_cbf11DBM-YES_vs_WT-YES.csv'), row.names = 1)
+
+deg.cbf11$score <- -log10(deg.cbf11$padj)
+deg.cbf11dbm$score <- -log10(deg.cbf11dbm$padj)
+
+deg.cbf11[is.na(deg.cbf11$gene_name), 'gene_name'] <- rownames(deg.cbf11[is.na(deg.cbf11$gene_name), ])
+deg.cbf11dbm[is.na(deg.cbf11dbm$gene_name), 'gene_name'] <- rownames(deg.cbf11dbm[is.na(deg.cbf11dbm$gene_name), ])
+
+deg.cbf11.coding <- deg.cbf11[grep('SPNCRNA', rownames(deg.cbf11), invert = TRUE), ]
+deg.cbf11dbm.coding <- deg.cbf11dbm[grep('SPNCRNA', rownames(deg.cbf11dbm), invert = TRUE), ]
+
+deg.cbf11.noncoding <- deg.cbf11[grep('SPNCRNA', rownames(deg.cbf11)), ]
+deg.cbf11dbm.noncoding <- deg.cbf11dbm[grep('SPNCRNA', rownames(deg.cbf11dbm)), ]
+
+peak_genes.cbf11 <- read.delim(paste0(peaks_filtered_dir, 'Cbf11.reproducible_untagged+Fkh2-filtered.summits.CLOSEST'))[, 1]
+peak_genes.cbf11dbm <- read.delim(paste0(peaks_filtered_dir, 'Cbf11DBM.reproducible_untagged+Fkh2-filtered.summits.CLOSEST'))[, 1]
+
+peak_genes.cbf11.coding <- read.delim(paste0(peaks_filtered_dir, 'score20/Cbf11.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.bed'))[, 7]
+peak_genes.cbf11dbm.coding <- read.delim(paste0(peaks_filtered_dir, 'score20/Cbf11DBM.reproducible_untagged+Fkh2-filtered.peaks.CLOSEST_CODING_S20.bed'))[, 7]
+```
+
+All genes
+
+```{r, eval=TRUE}
+plot(deg.cbf11$log2FoldChange, 
+     deg.cbf11$score,
+     pch = 20,
+     col = rgb(0.5, 0.5, 0.5, 0.2),
+     xlab = 'log2(foldChangeExpression)',
+     ylab = '-log10(Q_value)',
+     main = 'Cbf11')
+points(deg.cbf11[rownames(deg.cbf11) %in% peak_genes.cbf11, 'log2FoldChange'], 
+       deg.cbf11[rownames(deg.cbf11) %in% peak_genes.cbf11, 'score'],
+       pch = 20,
+       col = rgb(0, 0, 1, 0.3))
+
+plot(deg.cbf11$log2FoldChange, 
+     deg.cbf11$score,
+     pch = 20,
+     col = rgb(0.5, 0.5, 0.5, 0.2),
+     xlab = 'log2(foldChangeExpression)',
+     ylab = '-log10(Q_value)',
+     main = 'Cbf11')
+points(deg.cbf11[rownames(deg.cbf11) %in% rownames(deg.cbf11.noncoding), 'log2FoldChange'], 
+       deg.cbf11[rownames(deg.cbf11) %in% rownames(deg.cbf11.noncoding), 'score'],
+       pch = 20,
+       col = rgb(1, 0, 1, 0.3))
+
+# points(deg.cbf11[deg.cbf11$padj <= padj_threshold, 'log2FoldChange'], 
+#        deg.cbf11[deg.cbf11$padj <= padj_threshold, 'score'],
+#      pch = 20,
+#      col = rgb(0, 0, 1, 0.3),
+#      add = TRUE)
+
+plot(deg.cbf11$log2FoldChange, deg.cbf11dbm$log2FoldChange, xlim = c(-10, 10), ylim = c(-10, 10), pch = 20, col = rgb(0, 0, 0, 0.1))
+abline(0, 1)
+abline(1, 1)
+abline(-1, 1)
+```
+
+Coding genes only
+
+```{r, eval=TRUE}
+plot(deg.cbf11.coding$log2FoldChange, 
+     deg.cbf11.coding$score,
+     pch = 20,
+     col = rgb(0.5, 0.5, 0.5, 0.2),
+     xlab = 'log2(foldChangeExpression)',
+     ylab = '-log10(Q_value)',
+     main = 'Cbf11')
+points(deg.cbf11.coding[rownames(deg.cbf11.coding) %in% peak_genes.cbf11.coding, 'log2FoldChange'], 
+       deg.cbf11.coding[rownames(deg.cbf11.coding) %in% peak_genes.cbf11.coding, 'score'],
+     pch = 20,
+     col = rgb(0, 0, 1, 0.5))
+text(deg.cbf11.coding[rownames(deg.cbf11.coding) %in% peak_genes.cbf11.coding, 'log2FoldChange'],
+     deg.cbf11.coding[rownames(deg.cbf11.coding) %in% peak_genes.cbf11.coding, 'score'],
+     labels = deg.cbf11.coding[rownames(deg.cbf11.coding) %in% peak_genes.cbf11.coding, 'gene_name'],
+     cex = 0.4,
+     pos = 3,
+     offset = 0.3)
+
+plot(deg.cbf11dbm.coding$log2FoldChange, 
+     deg.cbf11dbm.coding$score,
+     pch = 20,
+     col = rgb(0.5, 0.5, 0.5, 0.2),
+     xlab = 'log2(foldChangeExpression)',
+     ylab = '-log10(Q_value)',
+     main = 'Cbf11DBM')
+points(deg.cbf11dbm.coding[rownames(deg.cbf11dbm.coding) %in% peak_genes.cbf11dbm.coding, 'log2FoldChange'], 
+       deg.cbf11dbm.coding[rownames(deg.cbf11dbm.coding) %in% peak_genes.cbf11dbm.coding, 'score'],
+     pch = 20,
+     col = rgb(0, 0, 1, 0.5))
+text(deg.cbf11dbm.coding[rownames(deg.cbf11dbm.coding) %in% peak_genes.cbf11dbm.coding, 'log2FoldChange'],
+     deg.cbf11dbm.coding[rownames(deg.cbf11dbm.coding) %in% peak_genes.cbf11dbm.coding, 'score'],
+     labels = deg.cbf11dbm.coding[rownames(deg.cbf11dbm.coding) %in% peak_genes.cbf11dbm.coding, 'gene_name'],
+     cex = 0.4,
+     pos = 3,
+     offset = 0.3)
+```
+
+```{r}
+sessionInfo()
+```
